@@ -1,0 +1,59 @@
+name: Build Larpit Hub for Mac
+
+on:
+  push:
+    branches: [larpit-mac-build-20261125]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Prepare Rust for Apple silicon and Intel
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Bundle the universal Mac app
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+          CI: 'true'
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app,dmg
+      - name: Verify the disk image and both architectures
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          mkdir -p release
+          dmg=$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
+          test -n "$dmg"
+          cp "$dmg" release/LarpitHub-1.0.1-Mac-Universal.dmg
+          hdiutil verify release/LarpitHub-1.0.1-Mac-Universal.dmg
+          mount=$(mktemp -d)
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" release/LarpitHub-1.0.1-Mac-Universal.dmg
+          trap 'hdiutil detach "$mount"' EXIT
+          app="$mount/Larpit Hub.app"
+          test -d "$app"
+          exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")
+          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/$exe"
+          codesign --verify --deep --strict "$app"
+          test -z "$(find "$app" -iname '*.ipa' -print -quit)"
+          cd release
+          shasum -a 256 LarpitHub-1.0.1-Mac-Universal.dmg > LarpitHub-1.0.1-Mac-Universal.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LarpitHub-1.0.1-Mac-Universal
+          path: release/LarpitHub-1.0.1-Mac-Universal.*
+          if-no-files-found: error

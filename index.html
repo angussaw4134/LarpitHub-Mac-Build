@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Larpit Hub</title></head>
+<body><header><div class="brand">Larpit Hub</div><span class="product">IPA Loader</span></header>
+<div class="layout"><aside><p class="side-label">Installation</p><ol id="steps"><li>Connect iPhone</li><li>Apple ID</li><li>Install an IPA</li></ol><p class="tagline" id="renewal" hidden></p></aside>
+<main><div class="topline"><span id="step-count"></span><span id="lock-state">Locked</span></div>
+<section id="connect"><h1>Connect your iPhone</h1><p>Plug your iPhone into this computer, unlock it and tap <b>Trust</b> if prompted.</p>
+<label for="phones">Connected iPhones</label><div class="row"><select id="phones"><option value="">Choose an iPhone</option></select><button id="refresh" class="quiet">Refresh</button></div>
+<button id="connect-phone" class="primary">Use this iPhone</button></section>
+<section id="account" hidden><h1>Sign in with your Apple ID</h1><p>Sign in with your Apple ID. Your first verified Apple ID links to this profile. Sign-in lasts up to 48 hours.</p>
+<form id="login-form"><label for="email">Apple Account</label><input id="email" type="email" autocomplete="username" placeholder="you@example.com" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+<details><summary>Authentication helper</summary><select id="server" aria-label="Authentication helper"><option value="primary">ani.jkcoxson.com</option><option value="alternative">ani.iloader.app</option></select></details><button class="primary">Sign in to Apple</button></form></section>
+<section id="package" hidden><h1>Install an IPA</h1><p>Choose an iPhone app package from this computer and confirm the app details before installing.</p>
+<div class="file"><span class="file-mark">IPA</span><div><strong id="file-name">No IPA selected</strong><small id="file-info">Select a local .ipa file</small></div><button class="quiet" id="choose">Select IPA</button><button class="quiet" id="choose-second" hidden>Select app 2</button></div><button class="primary" id="install" disabled>Install on iPhone</button>
+<button class="link" id="signout">Sign out of Apple</button></section>
+<p id="status" role="status" aria-live="polite"></p><div class="phone-bar" id="phone-bar" hidden><div><small>Selected iPhone</small><strong id="phone-name"></strong></div><button class="link" id="change">Change selection</button></div>
+</main></div>
+<dialog id="two-factor"><h2>Verify your Apple Account</h2><p id="factor-note"></p><form id="factor-form"><label for="code">Verification code</label><input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button class="primary">Verify code</button></form><div id="factor-methods"></div><button id="factor-cancel" class="quiet">Cancel sign-in</button></dialog>
+<dialog id="certificates"><h2>Apple certificate limit</h2><p>Replacing a certificate can stop apps signed with it from opening. Select a certificate to replace or cancel.</p><div id="cert-options"></div><button id="cert-confirm" class="primary">Replace selected</button><button id="cert-cancel" class="quiet">Cancel</button></dialog>
+<script type="module" src="/src/main.js"></script></body></html>
