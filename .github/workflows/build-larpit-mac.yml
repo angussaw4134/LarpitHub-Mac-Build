@@ -39,22 +39,24 @@ jobs:
         run: |
           set -euo pipefail
           bundle=src-tauri/target/universal-apple-darwin/release/bundle/macos
-          download=LarpitHub-1.0.3-Mac-Universal
+          download=LarpitHub-1.0.4-Mac-Universal
           stage=$(mktemp -d)
           folder="$stage/Larpit Hub"
-          mkdir -p "$folder/ipa1" "$folder/ipa2"
+          mkdir -p "$folder/ipa1" "$folder/ipa2" "$folder/ipa3"
           ditto "$bundle/Larpit Hub.app" "$folder/Larpit Hub.app"
           cat > "$folder/Read me.txt" <<'EOF'
           Larpit Hub for Mac
 
-          Keep Larpit Hub.app, ipa1 and ipa2 in the same folder.
-          Put one .ipa file in ipa1 for APP 1 and one in ipa2 for APP 2.
-          The filenames can be anything ending in .ipa.
+          Keep Larpit Hub.app, ipa1, ipa2 and ipa3 in the same folder.
+          Put one .ipa file in any of the three folders, or leave them empty.
+          The IPA filename is shown on its app card.
+          For custom art, add cover.png, cover.jpg, cover.jpeg or cover.webp
+          to that slot's folder. Use one image up to 4 MiB per card.
 
-          Open Larpit Hub, connect your iPhone and sign in.
-          Click APP 1 or APP 2, check the app name, and click Install on iPhone.
-          If the app cannot find the folders, click Choose IPA folder and select
-          the Larpit Hub folder containing both ipa1 and ipa2.
+          Open Larpit Hub and click Launch on the card you want to install.
+          Connect your iPhone, sign in, review the app name and click Install on iPhone.
+          Use Refresh slots after changing files. If your cards still appear empty,
+          click Choose IPA folder and select the Larpit Hub folder containing your slots.
           EOF
           mkdir -p release
           ditto -c -k --sequesterRsrc --keepParent "$folder" "release/$download.zip"
@@ -63,7 +65,8 @@ jobs:
           app="$extracted/Larpit Hub.app"
           test -d "$extracted/ipa1"
           test -d "$extracted/ipa2"
-          test -z "$(find "$extracted/ipa1" "$extracted/ipa2" -mindepth 1 -print -quit)"
+          test -d "$extracted/ipa3"
+          test -z "$(find "$extracted/ipa1" "$extracted/ipa2" "$extracted/ipa3" -mindepth 1 -print -quit)"
           test -z "$(find "$extracted" -iname '*.ipa' -print -quit)"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")
           lipo "$app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
@@ -72,6 +75,6 @@ jobs:
           shasum -a 256 "$download.zip" > "$download.sha256"
       - uses: actions/upload-artifact@v7
         with:
-          name: LarpitHub-1.0.3-Mac-Universal
-          path: release/LarpitHub-1.0.3-Mac-Universal.*
+          name: LarpitHub-1.0.4-Mac-Universal
+          path: release/LarpitHub-1.0.4-Mac-Universal.*
           if-no-files-found: error

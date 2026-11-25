@@ -2,6 +2,8 @@ use std::{collections::HashSet, fs::File, io::{Read, Write}, path::{Path, PathBu
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
+#[cfg(any(target_os = "macos", test))]
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 #[cfg(target_os = "macos")]
 use tauri_plugin_store::StoreExt;
 use tempfile::TempDir;
@@ -117,19 +119,15 @@ pub fn uses_ipa_folders() -> bool {
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn ipa_from_folder(root: &Path, slot: u8) -> Result<PathBuf, AppError> {
-    let name = match slot {
-        1 => "ipa1",
-        2 => "ipa2",
-        _ => return Err(problem("Select APP 1 or APP 2.")),
+const IPA_FOLDERS: [&str; 3] = ["ipa1", "ipa2", "ipa3"];
+
+#[cfg(any(target_os = "macos", test))]
+fn find_ipa(root: &Path, name: &str) -> Result<Option<PathBuf>, AppError> {
+    let entries = match std::fs::read_dir(root.join(name)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(problem(&format!("Cannot read {name}. Check that this Mac can access the folder."))),
     };
-    let entries = std::fs::read_dir(root.join(name)).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            problem(&format!("Cannot find {name}. Use Choose IPA folder and select the folder containing ipa1 and ipa2."))
-        } else {
-            problem(&format!("Cannot read {name}. Check that this Mac can access the folder."))
-        }
-    })?;
     let mut ipa = None;
     for entry in entries {
         let entry = entry.map_err(|_| problem(&format!("Cannot read a file in {name}.")))?;
@@ -145,7 +143,66 @@ fn ipa_from_folder(root: &Path, slot: u8) -> Result<PathBuf, AppError> {
         }
         ipa = Some(path);
     }
-    ipa.ok_or_else(|| problem(&format!("Put one .ipa file in {name}, then try again.")))
+    Ok(ipa)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn ipa_from_folder(root: &Path, slot: u8) -> Result<PathBuf, AppError> {
+    let name = slot.checked_sub(1).and_then(|index| IPA_FOLDERS.get(usize::from(index)))
+        .ok_or_else(|| problem("Select APP 1, APP 2 or APP 3."))?;
+    find_ipa(root, name)?.ok_or_else(|| problem(&format!("Put one .ipa file in {name}, then try again.")))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn slot_artwork(folder: &Path) -> Option<String> {
+    const LIMIT: u64 = 4 * 1024 * 1024;
+    for name in ["cover.png", "cover.jpg", "cover.jpeg", "cover.webp"] {
+        let path = folder.join(name);
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue; };
+        if !meta.is_file() || meta.len() > LIMIT {
+            continue;
+        }
+        let Ok(file) = File::open(path) else { continue; };
+        let mut bytes = Vec::new();
+        if file.take(LIMIT + 1).read_to_end(&mut bytes).is_err() || bytes.len() as u64 > LIMIT {
+            continue;
+        }
+        let mime = match name {
+            "cover.png" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => "image/png",
+            "cover.jpg" | "cover.jpeg" if bytes.starts_with(&[0xff, 0xd8, 0xff]) => "image/jpeg",
+            "cover.webp" if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") => "image/webp",
+            _ => continue,
+        };
+        return Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)));
+    }
+    None
+}
+
+#[derive(Serialize)]
+pub struct SlotInfo {
+    title: Option<String>,
+    artwork: Option<String>,
+    issue: Option<String>,
+}
+
+#[tauri::command]
+pub async fn read_ipa_slots(handle: AppHandle) -> Result<Vec<SlotInfo>, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let root = ipa_root(&handle)?;
+        Ok(IPA_FOLDERS.iter().map(|name| {
+            let (title, issue) = match find_ipa(&root, name) {
+                Ok(path) => (path.and_then(|ipa| ipa.file_stem().map(|stem| stem.to_string_lossy().into_owned())), None),
+                Err(error) => (None, Some(error.to_string())),
+            };
+            SlotInfo { title, artwork: slot_artwork(&root.join(name)), issue }
+        }).collect())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = handle;
+        Ok(Vec::new())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -161,7 +218,7 @@ fn ipa_root(handle: &AppHandle) -> Result<PathBuf, AppError> {
     let executable = std::env::current_exe().map_err(|_| problem("Cannot locate Larpit Hub."))?;
     // Walk up past Larpit Hub.app to the folder beside it.
     executable.ancestors().nth(4).map(Path::to_path_buf)
-        .ok_or_else(|| problem("Use Choose IPA folder and select the folder containing ipa1 and ipa2."))
+        .ok_or_else(|| problem("Use Choose IPA folder and select the folder containing your app slots."))
 }
 
 #[tauri::command]
@@ -169,7 +226,7 @@ pub async fn choose_ipa_folder(handle: AppHandle, packages: State<'_, PackageSta
     #[cfg(target_os = "macos")]
     {
         let _busy = BusyGuard::take()?;
-        let mut dialog = handle.dialog().file().set_title("Choose the folder containing ipa1 and ipa2");
+        let mut dialog = handle.dialog().file().set_title("Choose the Larpit Hub folder containing your app slots");
         if let Ok(downloads) = handle.path().download_dir() {
             if downloads.is_dir() {
                 dialog = dialog.set_directory(downloads);
@@ -181,8 +238,8 @@ pub async fn choose_ipa_folder(handle: AppHandle, packages: State<'_, PackageSta
             return Ok(false);
         };
         let folder = choice.into_path().map_err(|_| problem("Select a folder stored on this Mac."))?;
-        if !["ipa1", "ipa2"].iter().all(|name| folder.join(name).is_dir()) {
-            return Err(problem("Select the parent folder that contains both ipa1 and ipa2."));
+        if !IPA_FOLDERS.iter().any(|name| folder.join(name).is_dir()) {
+            return Err(problem("Select the parent folder containing ipa1, ipa2 or ipa3."));
         }
         let error = || problem("Cannot save the selected IPA folder.");
         let store = handle.store("ipa-settings.json").map_err(|_| error())?;
@@ -276,7 +333,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let first = root.path().join("ipa1");
         let second = root.path().join("ipa2");
-        assert!(ipa_from_folder(root.path(), 1).unwrap_err().to_string().contains("Cannot find ipa1"));
+        let third = root.path().join("ipa3");
+        assert!(IPA_FOLDERS.iter().all(|name| find_ipa(root.path(), name).unwrap().is_none()));
 
         std::fs::create_dir(&first).unwrap();
         std::fs::create_dir(&second).unwrap();
@@ -293,6 +351,23 @@ mod tests {
         assert_eq!(ipa_from_folder(root.path(), 2).unwrap(), two);
         File::create(second.join("Duplicate.ipa")).unwrap();
         assert!(ipa_from_folder(root.path(), 2).unwrap_err().to_string().contains("Keep just one"));
+        std::fs::create_dir(&third).unwrap();
+        assert!(find_ipa(root.path(), "ipa3").unwrap().is_none());
+        let three = third.join("Third.ipa");
+        File::create(&three).unwrap();
+        assert_eq!(ipa_from_folder(root.path(), 3).unwrap(), three);
+        assert!(ipa_from_folder(root.path(), 4).is_err());
+    }
+
+    #[test]
+    fn slot_artwork_ignores_invalid_and_oversized_files() {
+        let folder = tempfile::tempdir().unwrap();
+        assert!(slot_artwork(folder.path()).is_none());
+        std::fs::write(folder.path().join("cover.png"), b"not a PNG").unwrap();
+        File::create(folder.path().join("cover.jpg")).unwrap().set_len(5 * 1024 * 1024).unwrap();
+        assert!(slot_artwork(folder.path()).is_none());
+        std::fs::write(folder.path().join("cover.webp"), b"RIFF\0\0\0\0WEBP").unwrap();
+        assert!(slot_artwork(folder.path()).unwrap().starts_with("data:image/webp;base64,"));
     }
 
     #[test]

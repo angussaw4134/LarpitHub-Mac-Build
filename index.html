@@ -1,8 +1,33 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Larpit Hub</title></head>
 <body><header><div class="brand">Larpit Hub</div><span class="product">IPA Loader</span></header>
-<div class="layout"><aside><p class="side-label">Installation</p><ol id="steps"><li>Connect iPhone</li><li>Apple ID</li><li>Install an IPA</li></ol><p class="tagline" id="renewal" hidden></p></aside>
-<main><div class="topline"><span id="step-count"></span><span id="lock-state">Locked</span></div>
+<div class="layout" id="loader-layout"><aside><p class="side-label">Installation</p><ol id="steps"><li>Connect iPhone</li><li>Apple ID</li><li>Install an IPA</li></ol><p class="tagline" id="renewal" hidden></p></aside>
+<main><button class="link back-to-apps" id="back-to-apps" type="button" hidden>← Back to apps</button><div class="topline" id="install-topline"><span id="step-count"></span><span id="lock-state">Locked</span></div>
+<section class="library" id="library" hidden>
+  <div class="library-head">
+    <div><h1>Your apps</h1><p>Pick an app to install on your iPhone.</p></div>
+    <div class="library-actions">
+      <button class="quiet" id="reload-slots" type="button">Refresh slots</button>
+      <button class="quiet" id="choose-folder" type="button">Choose IPA folder</button>
+    </div>
+  </div>
+  <div id="app-slots" class="app-slots"></div>
+  <template id="slot-template">
+    <article class="app-card">
+      <div class="app-cover"><img alt="" hidden></div>
+      <div class="app-card-body">
+        <h2 class="app-title"></h2>
+        <p class="app-location"></p>
+        <p class="app-issue" hidden></p>
+        <button class="launch-app" type="button" disabled>Launch <span aria-hidden="true">→</span></button>
+      </div>
+    </article>
+  </template>
+  <details class="library-guide"><summary>Set up your app slots</summary>
+    <p>Put one .ipa file in any of the three folders beside Larpit Hub. Add a cover.png, cover.jpg, cover.jpeg or cover.webp up to 4 MB in the same folder for custom artwork. Click Refresh slots after changing files.</p>
+  </details>
+  <p class="library-renewal" id="library-renewal" hidden></p>
+</section>
 <section id="connect"><h1>Connect your iPhone</h1><p>Plug your iPhone into this computer, unlock it and tap <b>Trust</b> if prompted.</p>
 <label for="phones">Connected iPhones</label><div class="row"><select id="phones"><option value="">Choose an iPhone</option></select><button id="refresh" class="quiet">Refresh</button></div>
 <button id="connect-phone" class="primary">Use this iPhone</button></section>
@@ -11,12 +36,7 @@
 <details><summary>Authentication helper</summary><select id="server" aria-label="Authentication helper"><option value="primary">ani.jkcoxson.com</option><option value="alternative">ani.iloader.app</option></select></details><button class="primary">Sign in to Apple</button></form></section>
 <section id="package" hidden><h1>Install an IPA</h1><p id="package-description">Choose an iPhone app package from this computer and confirm the app details before installing.</p>
 <div class="file"><span class="file-mark">IPA</span><div><strong id="file-name">No IPA selected</strong><small id="file-info">Select a local .ipa file</small></div><button class="quiet" id="choose">Select IPA</button><button class="quiet" id="choose-second" hidden>Select app 2</button></div>
-<div class="app-slots" id="app-slots" hidden>
-  <button type="button" class="quiet" id="app-1">APP 1 <small>ipa1</small></button>
-  <button type="button" class="quiet" id="app-2">APP 2 <small>ipa2</small></button>
-</div>
 <button class="primary" id="install" disabled>Install on iPhone</button>
-<button class="link" id="choose-folder" hidden>Choose IPA folder</button>
 <button class="link" id="signout">Sign out of Apple</button></section>
 <p id="status" role="status" aria-live="polite"></p><div class="phone-bar" id="phone-bar" hidden><div><small>Selected iPhone</small><strong id="phone-name"></strong></div><button class="link" id="change">Change selection</button></div>
 </main></div>
