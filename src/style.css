@@ -7,3 +7,8 @@ header{background:#080808;border-bottom:2px solid white}.brand{font-weight:800}
 .brand:before{content:"";width:26px;height:28px;border-left:8px solid white;border-bottom:8px solid white;transform:skew(-12deg)}
 aside{background:#141414}li.active,.file-mark{background:white;color:black}li.active:before{background:black;box-shadow:none}
 button,input,select,.file,dialog{border-radius:4px}.primary{background:white;color:black}.file{border-style:solid}#status.error:before{content:"Error: ";font-weight:bold}
+
+.app-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.app-slots .quiet{padding:14px;text-align:left}
+.app-slots .quiet:hover:enabled{background:#414141}
+.app-slots small{display:block;margin-top:5px;color:var(--muted);font:13px ui-monospace,monospace}

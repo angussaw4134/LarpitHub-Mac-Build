@@ -32,32 +32,46 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: '-'
           CI: 'true'
-        run: npm run tauri -- build --target universal-apple-darwin --bundles app,dmg
-      - name: Test the bundled demo through the installer's IPA reader
-        run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --lib --features tauri/custom-protocol bundled_christmas_demo_passes_the_installers_ipa_check
-      - name: Verify the disk image and both architectures
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app
+      - name: Test IPA folder selection and IPA parsing
+        run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --lib --features tauri/custom-protocol install::tests
+      - name: Create and check the portable ZIP
         run: |
           set -euo pipefail
-          bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          bundle=src-tauri/target/universal-apple-darwin/release/bundle/macos
+          download=LarpitHub-1.0.3-Mac-Universal
+          stage=$(mktemp -d)
+          folder="$stage/Larpit Hub"
+          mkdir -p "$folder/ipa1" "$folder/ipa2"
+          ditto "$bundle/Larpit Hub.app" "$folder/Larpit Hub.app"
+          cat > "$folder/Read me.txt" <<'EOF'
+          Larpit Hub for Mac
+
+          Keep Larpit Hub.app, ipa1 and ipa2 in the same folder.
+          Put one .ipa file in ipa1 for APP 1 and one in ipa2 for APP 2.
+          The filenames can be anything ending in .ipa.
+
+          Open Larpit Hub, connect your iPhone and sign in.
+          Click APP 1 or APP 2, check the app name, and click Install on iPhone.
+          If the app cannot find the folders, click Choose IPA folder and select
+          the Larpit Hub folder containing both ipa1 and ipa2.
+          EOF
           mkdir -p release
-          dmg=$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
-          test -n "$dmg"
-          cp "$dmg" release/LarpitHub-1.0.2-Mac-Universal.dmg
-          hdiutil verify release/LarpitHub-1.0.2-Mac-Universal.dmg
-          mount=$(mktemp -d)
-          hdiutil attach -readonly -nobrowse -mountpoint "$mount" release/LarpitHub-1.0.2-Mac-Universal.dmg
-          trap 'hdiutil detach "$mount"' EXIT
-          app="$mount/Larpit Hub.app"
-          test -d "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$folder" "release/$download.zip"
+          ditto -x -k "release/$download.zip" "$stage/unpacked"
+          extracted="$stage/unpacked/Larpit Hub"
+          app="$extracted/Larpit Hub.app"
+          test -d "$extracted/ipa1"
+          test -d "$extracted/ipa2"
+          test -z "$(find "$extracted/ipa1" "$extracted/ipa2" -mindepth 1 -print -quit)"
+          test -z "$(find "$extracted" -iname '*.ipa' -print -quit)"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")
           lipo "$app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$app"
-          test "$(find "$app" -iname '*.ipa' | wc -l | tr -d ' ')" = 1
-          cmp src-tauri/mac-apps/WinterStudioDemo.ipa "$app/Contents/Resources/Application.ipa"
           cd release
-          shasum -a 256 LarpitHub-1.0.2-Mac-Universal.dmg > LarpitHub-1.0.2-Mac-Universal.sha256
+          shasum -a 256 "$download.zip" > "$download.sha256"
       - uses: actions/upload-artifact@v7
         with:
-          name: LarpitHub-1.0.2-Mac-Universal
-          path: release/LarpitHub-1.0.2-Mac-Universal.*
+          name: LarpitHub-1.0.3-Mac-Universal
+          path: release/LarpitHub-1.0.3-Mac-Universal.*
           if-no-files-found: error

@@ -9,9 +9,14 @@
 <section id="account" hidden><h1>Sign in with your Apple ID</h1><p>Sign in with your Apple ID. Your first verified Apple ID links to this profile. Sign-in lasts up to 48 hours.</p>
 <form id="login-form"><label for="email">Apple Account</label><input id="email" type="email" autocomplete="username" placeholder="you@example.com" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
 <details><summary>Authentication helper</summary><select id="server" aria-label="Authentication helper"><option value="primary">ani.jkcoxson.com</option><option value="alternative">ani.iloader.app</option></select></details><button class="primary">Sign in to Apple</button></form></section>
-<section id="package" hidden><h1>Install an IPA</h1><p>Choose an iPhone app package from this computer and confirm the app details before installing.</p>
-<div class="file"><span class="file-mark">IPA</span><div><strong id="file-name">No IPA selected</strong><small id="file-info">Select a local .ipa file</small></div><button class="quiet" id="choose">Select IPA</button><button class="quiet" id="choose-second" hidden>Select app 2</button></div><button class="primary" id="install" disabled>Install on iPhone</button>
-<button class="link" id="choose-local" hidden>Choose another IPA</button>
+<section id="package" hidden><h1>Install an IPA</h1><p id="package-description">Choose an iPhone app package from this computer and confirm the app details before installing.</p>
+<div class="file"><span class="file-mark">IPA</span><div><strong id="file-name">No IPA selected</strong><small id="file-info">Select a local .ipa file</small></div><button class="quiet" id="choose">Select IPA</button><button class="quiet" id="choose-second" hidden>Select app 2</button></div>
+<div class="app-slots" id="app-slots" hidden>
+  <button type="button" class="quiet" id="app-1">APP 1 <small>ipa1</small></button>
+  <button type="button" class="quiet" id="app-2">APP 2 <small>ipa2</small></button>
+</div>
+<button class="primary" id="install" disabled>Install on iPhone</button>
+<button class="link" id="choose-folder" hidden>Choose IPA folder</button>
 <button class="link" id="signout">Sign out of Apple</button></section>
 <p id="status" role="status" aria-live="polite"></p><div class="phone-bar" id="phone-bar" hidden><div><small>Selected iPhone</small><strong id="phone-name"></strong></div><button class="link" id="change">Change selection</button></div>
 </main></div>

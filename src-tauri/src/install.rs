@@ -2,6 +2,8 @@ use std::{collections::HashSet, fs::File, io::{Read, Write}, path::{Path, PathBu
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
+#[cfg(target_os = "macos")]
+use tauri_plugin_store::StoreExt;
 use tempfile::TempDir;
 use crate::{binding::{problem, require, selected}, device::DeviceInfoMutex, error::AppError,
     sideload::{SideloaderGuard, SideloaderMutex}, BusyGuard};
@@ -39,7 +41,7 @@ fn inspect(path: &Path, extract: Option<&Path>) -> Result<(String, PackageInfo),
             return Err(problem("Unsupported file path inside the IPA."));
         }
         if item.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
-            return Err(problem("This Windows loader does not support archives containing symbolic links."));
+            return Err(problem("This IPA contains symbolic links that the installer cannot unpack."));
         }
         if !parts[1].ends_with(".app") { return Err(invalid()); }
         total = total.saturating_add(item.size());
@@ -90,6 +92,7 @@ fn inspect(path: &Path, extract: Option<&Path>) -> Result<(String, PackageInfo),
     Ok((app, info))
 }
 
+#[cfg(not(target_os = "macos"))]
 fn package_path(slot: u8) -> Result<PathBuf, AppError> {
     let filename = match slot {
         1 => "Application.ipa",
@@ -97,26 +100,105 @@ fn package_path(slot: u8) -> Result<PathBuf, AppError> {
         _ => return Err(problem("Select app 1 or app 2.")),
     };
     let executable = std::env::current_exe().map_err(|_| problem("Cannot locate Larpit Hub."))?;
-    #[cfg(target_os = "macos")]
-    {
-        let contents = executable.parent().and_then(|p| p.parent())
-            .ok_or_else(|| problem("Cannot locate Larpit Hub resources."))?;
-        return Ok(contents.join("Resources").join(filename));
-    }
-    #[cfg(not(target_os = "macos"))]
     Ok(executable.with_file_name(filename))
 }
 
 #[tauri::command]
 pub fn has_second_package() -> Result<bool, AppError> {
+    #[cfg(target_os = "macos")]
+    return Ok(false);
+    #[cfg(not(target_os = "macos"))]
     Ok(package_path(2)?.is_file())
 }
 
 #[tauri::command]
-pub fn has_bundled_demo() -> Result<bool, AppError> {
-    Ok(cfg!(target_os = "macos") && package_path(1)?.is_file())
+pub fn uses_ipa_folders() -> bool {
+    cfg!(target_os = "macos")
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn ipa_from_folder(root: &Path, slot: u8) -> Result<PathBuf, AppError> {
+    let name = match slot {
+        1 => "ipa1",
+        2 => "ipa2",
+        _ => return Err(problem("Select APP 1 or APP 2.")),
+    };
+    let entries = std::fs::read_dir(root.join(name)).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            problem(format!("Cannot find {name}. Use Choose IPA folder and select the folder containing ipa1 and ipa2."))
+        } else {
+            problem(format!("Cannot read {name}. Check that this Mac can access the folder."))
+        }
+    })?;
+    let mut ipa = None;
+    for entry in entries {
+        let entry = entry.map_err(|_| problem(format!("Cannot read a file in {name}.")))?;
+        let path = entry.path();
+        if entry.file_name().to_string_lossy().starts_with('.')
+            || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("ipa"))
+            || !entry.file_type().map_err(|_| problem(format!("Cannot read a file in {name}.")))?.is_file()
+        {
+            continue;
+        }
+        if ipa.is_some() {
+            return Err(problem(format!("Keep just one .ipa file in {name}, then try again.")));
+        }
+        ipa = Some(path);
+    }
+    ipa.ok_or_else(|| problem(format!("Put one .ipa file in {name}, then try again.")))
+}
+
+#[cfg(target_os = "macos")]
+fn ipa_root(handle: &AppHandle) -> Result<PathBuf, AppError> {
+    if let Some(folder) = handle.store("ipa-settings.json").ok()
+        .and_then(|store| store.get("folder"))
+        .and_then(|value| serde_json::from_value::<PathBuf>(value).ok())
+        .filter(|folder| folder.is_absolute() && folder.is_dir())
+    {
+        return Ok(folder);
+    }
+
+    let executable = std::env::current_exe().map_err(|_| problem("Cannot locate Larpit Hub."))?;
+    // Walk up past Larpit Hub.app to the folder beside it.
+    executable.ancestors().nth(4).map(Path::to_path_buf)
+        .ok_or_else(|| problem("Use Choose IPA folder and select the folder containing ipa1 and ipa2."))
+}
+
+#[tauri::command]
+pub async fn choose_ipa_folder(handle: AppHandle, packages: State<'_, PackageState>) -> Result<bool, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let _busy = BusyGuard::take()?;
+        let mut dialog = handle.dialog().file().set_title("Choose the folder containing ipa1 and ipa2");
+        if let Ok(downloads) = handle.path().download_dir() {
+            if downloads.is_dir() {
+                dialog = dialog.set_directory(downloads);
+            }
+        }
+        let (send, receive) = tokio::sync::oneshot::channel();
+        dialog.pick_folder(move |choice| { let _ = send.send(choice); });
+        let Some(choice) = receive.await.map_err(|_| problem("The folder picker closed unexpectedly."))? else {
+            return Ok(false);
+        };
+        let folder = choice.into_path().map_err(|_| problem("Select a folder stored on this Mac."))?;
+        if !["ipa1", "ipa2"].iter().all(|name| folder.join(name).is_dir()) {
+            return Err(problem("Select the parent folder that contains both ipa1 and ipa2."));
+        }
+        let error = || problem("Cannot save the selected IPA folder.");
+        let store = handle.store("ipa-settings.json").map_err(|_| error())?;
+        store.set("folder", serde_json::to_value(&folder).map_err(|_| error())?);
+        store.save().map_err(|_| error())?;
+        *packages.0.lock().unwrap() = None;
+        Ok(true)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (handle, packages);
+        Err(problem("IPA folders are available in the Mac loader."))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 async fn pick_ipa(handle: &AppHandle) -> Result<Option<PathBuf>, AppError> {
     let mut dialog = handle.dialog().file()
         .set_title("Choose an iPhone app (.ipa)")
@@ -135,15 +217,21 @@ async fn pick_ipa(handle: &AppHandle) -> Result<Option<PathBuf>, AppError> {
 #[tauri::command]
 pub async fn choose_package(slot: u8, handle: AppHandle, device: State<'_, DeviceInfoMutex>, session: State<'_, SideloaderMutex>, packages: State<'_, PackageState>) -> Result<Option<PackageInfo>, AppError> {
     let _busy = BusyGuard::take()?;
+    #[cfg(target_os = "macos")]
+    {
+        *packages.0.lock().unwrap() = None;
+    }
     let account = crate::sideload::signed_in_account(&session)?;
     require(&selected(&device)?, &account).await?;
+    #[cfg(target_os = "macos")]
+    let source = Some(ipa_from_folder(&ipa_root(&handle)?, slot)?);
+    #[cfg(not(target_os = "macos"))]
     let source = match slot {
-        0 => pick_ipa(&handle).await?,
         1 | 2 => {
             let bundled = package_path(slot)?;
             if bundled.is_file() {
                 Some(bundled)
-            } else if slot == 1 && !cfg!(target_os = "macos") {
+            } else if slot == 1 {
                 pick_ipa(&handle).await?
             } else {
                 return Err(problem("The bundled IPA is missing. Choose an IPA from Downloads."));
@@ -183,15 +271,28 @@ pub async fn install_package(window: Window, device: State<'_, DeviceInfoMutex>,
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
-    fn bundled_christmas_demo_passes_the_installers_ipa_check() {
-        let archive = Path::new(env!("CARGO_MANIFEST_DIR")).join("mac-apps/WinterStudioDemo.ipa");
-        let output = tempfile::tempdir().unwrap();
-        let (app, metadata) = inspect(&archive, Some(output.path())).unwrap();
-        assert_eq!(metadata.name, "3377 Christmas Demo");
-        assert_eq!(metadata.bundle, "dev.accesshub.winterstudio.offline");
-        assert!(output.path().join("Payload").join(app).join("Info.plist").is_file());
+    fn finds_each_ipa_by_folder_and_reports_missing_or_ambiguous_files() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("ipa1");
+        let second = root.path().join("ipa2");
+        assert!(ipa_from_folder(root.path(), 1).unwrap_err().to_string().contains("Cannot find ipa1"));
+
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        File::create(first.join(".DS_Store")).unwrap();
+        File::create(first.join("._Metadata.ipa")).unwrap();
+        std::fs::create_dir(first.join("folder.ipa")).unwrap();
+        assert!(ipa_from_folder(root.path(), 1).unwrap_err().to_string().contains("Put one .ipa file"));
+
+        let one = first.join("Example App.IPA");
+        let two = second.join("Another.ipa");
+        File::create(&one).unwrap();
+        File::create(&two).unwrap();
+        assert_eq!(ipa_from_folder(root.path(), 1).unwrap(), one);
+        assert_eq!(ipa_from_folder(root.path(), 2).unwrap(), two);
+        File::create(second.join("Duplicate.ipa")).unwrap();
+        assert!(ipa_from_folder(root.path(), 2).unwrap_err().to_string().contains("Keep just one"));
     }
 
     #[test]

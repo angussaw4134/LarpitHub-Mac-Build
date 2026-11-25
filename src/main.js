@@ -6,7 +6,7 @@ const $ = id => document.getElementById(id);
 const screens = ["connect", "account", "package"];
 let step = 0, busy = false, phones = [], selected = null, packageInfo = null;
 let factorId = null, certificateId = null;
-let bundledDemo = false;
+let usesFolderSlots = false;
 
 function status(text = "", type = "") {
   $("status").textContent = text;
@@ -72,7 +72,7 @@ $("change").onclick = () => run(async () => {
 function resetFile() {
   packageInfo = null;
   $("file-name").textContent = "No IPA selected";
-  $("file-info").textContent = bundledDemo ? "Demo included in this installer" : "Select a local .ipa file";
+  $("file-info").textContent = usesFolderSlots ? "Choose APP 1 or APP 2 below" : "Select a local .ipa file";
 }
 $("login-form").onsubmit = e => {
   e.preventDefault();
@@ -84,10 +84,18 @@ $("login-form").onsubmit = e => {
   });
 };
 $("signout").onclick = () => run(async () => { await invoke("logout_apple"); resetFile(); go(1); });
-$("choose").onclick = () => selectPackage($("choose").dataset.slot === "bundled" ? 1 : 0);
+$("choose").onclick = () => selectPackage(1);
 $("choose-second").onclick = () => selectPackage(2);
-$("choose-local").onclick = () => selectPackage(0);
+$("app-1").onclick = () => selectPackage(1);
+$("app-2").onclick = () => selectPackage(2);
+$("choose-folder").onclick = () => run(async () => {
+  if (await invoke("choose_ipa_folder")) {
+    resetFile();
+    status("IPA folder saved. Choose APP 1 or APP 2.");
+  }
+});
 function selectPackage(slot) { return run(async () => {
+  if (usesFolderSlots) resetFile();
   const result = await invoke("choose_package", {slot});
   if (result) { packageInfo = result; $("file-name").textContent = result.name; $("file-info").textContent = [result.version, result.bundle].filter(Boolean).join(" · "); }
 }); }
@@ -160,13 +168,14 @@ async function start() {
     $("certificates").showModal();
   });
   await listen("install-stage", ({payload}) => status(payload));
-  const [hasSecond, hasDemo] = await Promise.all([invoke("has_second_package"), invoke("has_bundled_demo")]);
-  bundledDemo = hasDemo;
+  const [hasSecond, hasFolders] = await Promise.all([invoke("has_second_package"), invoke("uses_ipa_folders")]);
+  usesFolderSlots = hasFolders;
+  $("choose").hidden = hasFolders;
   $("choose-second").hidden = !hasSecond;
-  $("choose-local").hidden = !bundledDemo;
-  if (bundledDemo || hasSecond) $("choose").dataset.slot = "bundled";
-  if (bundledDemo) $("choose").textContent = "Select Christmas Demo";
-  else if (hasSecond) $("choose").textContent = "Select app 1";
+  $("app-slots").hidden = !hasFolders;
+  $("choose-folder").hidden = !hasFolders;
+  if (hasFolders) $("package-description").textContent = "Put one .ipa file in each folder beside Larpit Hub. Select an app below to check its details before installing.";
+  if (hasSecond) $("choose").textContent = "Select app 1";
   resetFile();
   await run(refresh);
 }

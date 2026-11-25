@@ -22,8 +22,10 @@ impl Drop for BusyGuard {
     fn drop(&mut self) { BUSY.store(false, Ordering::SeqCst); }
 }
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init()).setup(|app| {
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_store::Builder::default().build());
+    builder.setup(|app| {
             app.manage(device::DeviceInfoMutex::new(None));
             app.manage(install::PackageState::default());
             app.manage(sideload::SideloaderMutex::new(None));
@@ -33,8 +35,8 @@ pub fn run() {
             binding::check_phone,
             account::restore_apple, account::login_apple, account::logout_apple,
             device::list_devices, device::select_phone,
-            install::has_second_package, install::has_bundled_demo,
-            install::choose_package, install::install_package
+            install::has_second_package, install::uses_ipa_folders,
+            install::choose_ipa_folder, install::choose_package, install::install_package
         ])
         .run(tauri::generate_context!())
         .expect("Could not start Highzone");
