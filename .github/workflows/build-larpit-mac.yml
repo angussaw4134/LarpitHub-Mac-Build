@@ -33,6 +33,8 @@ jobs:
           APPLE_SIGNING_IDENTITY: '-'
           CI: 'true'
         run: npm run tauri -- build --target universal-apple-darwin --bundles app,dmg
+      - name: Test the bundled demo through the installer's IPA reader
+        run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --lib --features tauri/custom-protocol bundled_christmas_demo_passes_the_installers_ipa_check
       - name: Verify the disk image and both architectures
         run: |
           set -euo pipefail
@@ -40,21 +42,22 @@ jobs:
           mkdir -p release
           dmg=$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
           test -n "$dmg"
-          cp "$dmg" release/LarpitHub-1.0.1-Mac-Universal.dmg
-          hdiutil verify release/LarpitHub-1.0.1-Mac-Universal.dmg
+          cp "$dmg" release/LarpitHub-1.0.2-Mac-Universal.dmg
+          hdiutil verify release/LarpitHub-1.0.2-Mac-Universal.dmg
           mount=$(mktemp -d)
-          hdiutil attach -readonly -nobrowse -mountpoint "$mount" release/LarpitHub-1.0.1-Mac-Universal.dmg
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" release/LarpitHub-1.0.2-Mac-Universal.dmg
           trap 'hdiutil detach "$mount"' EXIT
           app="$mount/Larpit Hub.app"
           test -d "$app"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")
           lipo "$app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$app"
-          test -z "$(find "$app" -iname '*.ipa' -print -quit)"
+          test "$(find "$app" -iname '*.ipa' | wc -l | tr -d ' ')" = 1
+          cmp src-tauri/mac-apps/WinterStudioDemo.ipa "$app/Contents/Resources/Application.ipa"
           cd release
-          shasum -a 256 LarpitHub-1.0.1-Mac-Universal.dmg > LarpitHub-1.0.1-Mac-Universal.sha256
+          shasum -a 256 LarpitHub-1.0.2-Mac-Universal.dmg > LarpitHub-1.0.2-Mac-Universal.sha256
       - uses: actions/upload-artifact@v7
         with:
-          name: LarpitHub-1.0.1-Mac-Universal
-          path: release/LarpitHub-1.0.1-Mac-Universal.*
+          name: LarpitHub-1.0.2-Mac-Universal
+          path: release/LarpitHub-1.0.2-Mac-Universal.*
           if-no-files-found: error

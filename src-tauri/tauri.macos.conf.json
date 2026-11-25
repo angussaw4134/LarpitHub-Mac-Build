@@ -5,6 +5,9 @@
     ],
     "icon": [
       "icons/icon.icns"
-    ]
+    ],
+    "resources": {
+      "mac-apps/WinterStudioDemo.ipa": "Application.ipa"
+    }
   }
 }

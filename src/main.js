@@ -6,6 +6,7 @@ const $ = id => document.getElementById(id);
 const screens = ["connect", "account", "package"];
 let step = 0, busy = false, phones = [], selected = null, packageInfo = null;
 let factorId = null, certificateId = null;
+let bundledDemo = false;
 
 function status(text = "", type = "") {
   $("status").textContent = text;
@@ -69,7 +70,9 @@ $("change").onclick = () => run(async () => {
   selected = null; resetFile(); go(0); await refresh();
 });
 function resetFile() {
-  packageInfo = null; $("file-name").textContent = "No IPA selected"; $("file-info").textContent = "Select a local .ipa file";
+  packageInfo = null;
+  $("file-name").textContent = "No IPA selected";
+  $("file-info").textContent = bundledDemo ? "Demo included in this installer" : "Select a local .ipa file";
 }
 $("login-form").onsubmit = e => {
   e.preventDefault();
@@ -81,10 +84,10 @@ $("login-form").onsubmit = e => {
   });
 };
 $("signout").onclick = () => run(async () => { await invoke("logout_apple"); resetFile(); go(1); });
-$("choose").onclick = () => selectPackage(1);
+$("choose").onclick = () => selectPackage($("choose").dataset.slot === "bundled" ? 1 : 0);
 $("choose-second").onclick = () => selectPackage(2);
+$("choose-local").onclick = () => selectPackage(0);
 function selectPackage(slot) { return run(async () => {
-  resetFile();
   const result = await invoke("choose_package", {slot});
   if (result) { packageInfo = result; $("file-name").textContent = result.name; $("file-info").textContent = [result.version, result.bundle].filter(Boolean).join(" · "); }
 }); }
@@ -157,9 +160,14 @@ async function start() {
     $("certificates").showModal();
   });
   await listen("install-stage", ({payload}) => status(payload));
-  const hasSecond = await invoke("has_second_package");
+  const [hasSecond, hasDemo] = await Promise.all([invoke("has_second_package"), invoke("has_bundled_demo")]);
+  bundledDemo = hasDemo;
   $("choose-second").hidden = !hasSecond;
-  if (hasSecond) $("choose").textContent = "Select app 1";
+  $("choose-local").hidden = !bundledDemo;
+  if (bundledDemo || hasSecond) $("choose").dataset.slot = "bundled";
+  if (bundledDemo) $("choose").textContent = "Select Christmas Demo";
+  else if (hasSecond) $("choose").textContent = "Select app 1";
+  resetFile();
   await run(refresh);
 }
 start().catch(e => status(explain(e), "error"));

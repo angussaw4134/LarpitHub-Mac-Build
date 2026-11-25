@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fs::File, io::{Read, Write}, path::{Path, PathBuf}, sync::Mutex};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
 use tempfile::TempDir;
 use crate::{binding::{problem, require, selected}, device::DeviceInfoMutex, error::AppError,
@@ -113,20 +113,45 @@ pub fn has_second_package() -> Result<bool, AppError> {
 }
 
 #[tauri::command]
+pub fn has_bundled_demo() -> Result<bool, AppError> {
+    Ok(cfg!(target_os = "macos") && package_path(1)?.is_file())
+}
+
+async fn pick_ipa(handle: &AppHandle) -> Result<Option<PathBuf>, AppError> {
+    let mut dialog = handle.dialog().file()
+        .set_title("Choose an iPhone app (.ipa)")
+        .add_filter("iPhone application", &["ipa"]);
+    if let Ok(downloads) = handle.path().download_dir() {
+        if downloads.is_dir() {
+            dialog = dialog.set_directory(downloads);
+        }
+    }
+    let (send, receive) = tokio::sync::oneshot::channel();
+    dialog.pick_file(move |choice| { let _ = send.send(choice); });
+    let chosen = receive.await.map_err(|_| problem("The file picker closed unexpectedly."))?;
+    chosen.map(|path| path.into_path().map_err(|_| problem("Select an IPA stored on this computer."))).transpose()
+}
+
+#[tauri::command]
 pub async fn choose_package(slot: u8, handle: AppHandle, device: State<'_, DeviceInfoMutex>, session: State<'_, SideloaderMutex>, packages: State<'_, PackageState>) -> Result<Option<PackageInfo>, AppError> {
     let _busy = BusyGuard::take()?;
     let account = crate::sideload::signed_in_account(&session)?;
     require(&selected(&device)?, &account).await?;
-    let bundled = package_path(slot)?;
-    let source = if bundled.is_file() {
-        bundled
-    } else if slot == 2 {
-        return Err(problem("The second IPA is missing. Run Choose-Second-IPA.cmd to add it."));
-    } else {
-        let chosen = handle.dialog().file().add_filter("iPhone application", &["ipa"]).blocking_pick_file();
-        let Some(path) = chosen else { return Ok(None); };
-        path.into_path().map_err(|_| problem("Select a local IPA file."))?
+    let source = match slot {
+        0 => pick_ipa(&handle).await?,
+        1 | 2 => {
+            let bundled = package_path(slot)?;
+            if bundled.is_file() {
+                Some(bundled)
+            } else if slot == 1 && !cfg!(target_os = "macos") {
+                pick_ipa(&handle).await?
+            } else {
+                return Err(problem("The bundled IPA is missing. Choose an IPA from Downloads."));
+            }
+        }
+        _ => return Err(problem("Choose a valid iPhone app.")),
     };
+    let Some(source) = source else { return Ok(None); };
     let folder = tempfile::tempdir().map_err(|_| problem("Cannot create working folder."))?;
     let archive = folder.path().join("source.ipa");
     tokio::fs::copy(source, &archive).await.map_err(|_| problem("Cannot read the selected IPA."))?;
@@ -157,6 +182,17 @@ pub async fn install_package(window: Window, device: State<'_, DeviceInfoMutex>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bundled_christmas_demo_passes_the_installers_ipa_check() {
+        let archive = Path::new(env!("CARGO_MANIFEST_DIR")).join("mac-apps/WinterStudioDemo.ipa");
+        let output = tempfile::tempdir().unwrap();
+        let (app, metadata) = inspect(&archive, Some(output.path())).unwrap();
+        assert_eq!(metadata.name, "3377 Christmas Demo");
+        assert_eq!(metadata.bundle, "dev.accesshub.winterstudio.offline");
+        assert!(output.path().join("Payload").join(app).join("Info.plist").is_file());
+    }
 
     #[test]
     fn valid_ipa_metadata_and_extraction() {
