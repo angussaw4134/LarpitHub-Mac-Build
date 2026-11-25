@@ -26,6 +26,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          cache-on-failure: true
       - run: npm ci
       - name: Bundle the universal Mac app
         env:
@@ -47,7 +48,7 @@ jobs:
           app="$mount/Larpit Hub.app"
           test -d "$app"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")
-          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/$exe"
+          lipo "$app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$app"
           test -z "$(find "$app" -iname '*.ipa' -print -quit)"
           cd release
