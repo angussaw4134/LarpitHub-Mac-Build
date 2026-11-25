@@ -125,27 +125,27 @@ fn ipa_from_folder(root: &Path, slot: u8) -> Result<PathBuf, AppError> {
     };
     let entries = std::fs::read_dir(root.join(name)).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
-            problem(format!("Cannot find {name}. Use Choose IPA folder and select the folder containing ipa1 and ipa2."))
+            problem(&format!("Cannot find {name}. Use Choose IPA folder and select the folder containing ipa1 and ipa2."))
         } else {
-            problem(format!("Cannot read {name}. Check that this Mac can access the folder."))
+            problem(&format!("Cannot read {name}. Check that this Mac can access the folder."))
         }
     })?;
     let mut ipa = None;
     for entry in entries {
-        let entry = entry.map_err(|_| problem(format!("Cannot read a file in {name}.")))?;
+        let entry = entry.map_err(|_| problem(&format!("Cannot read a file in {name}.")))?;
         let path = entry.path();
         if entry.file_name().to_string_lossy().starts_with('.')
             || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("ipa"))
-            || !entry.file_type().map_err(|_| problem(format!("Cannot read a file in {name}.")))?.is_file()
+            || !entry.file_type().map_err(|_| problem(&format!("Cannot read a file in {name}.")))?.is_file()
         {
             continue;
         }
         if ipa.is_some() {
-            return Err(problem(format!("Keep just one .ipa file in {name}, then try again.")));
+            return Err(problem(&format!("Keep just one .ipa file in {name}, then try again.")));
         }
         ipa = Some(path);
     }
-    ipa.ok_or_else(|| problem(format!("Put one .ipa file in {name}, then try again.")))
+    ipa.ok_or_else(|| problem(&format!("Put one .ipa file in {name}, then try again.")))
 }
 
 #[cfg(target_os = "macos")]
