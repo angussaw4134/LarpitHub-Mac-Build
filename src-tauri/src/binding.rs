@@ -14,16 +14,23 @@ pub fn selected(state: &DeviceInfoMutex) -> Result<DeviceInfo, AppError> {
 
 async fn live_phone(device: &DeviceInfo) -> Result<(UsbmuxdProvider, String), AppError> {
     let provider = get_provider(device).await?;
-    let mut phone = LockdownClient::connect(&provider).await
-        .map_err(|_| problem("Reconnect the unlocked iPhone and tap Trust."))?;
-    let kind = phone.get_value(Some("DeviceClass"), None).await
-        .map_err(|_| problem("Unable to identify the connected iPhone."))?;
-    if kind.as_string() != Some("iPhone") { return Err(problem("Select an iPhone to continue.")); }
-    let id = phone.get_value(Some("UniqueDeviceID"), None).await
-        .map_err(|_| problem("Could not read the connected iPhone identifier."))?;
-    let udid = id.as_string().filter(|s| !s.is_empty() && s.eq_ignore_ascii_case(&device.udid))
-        .ok_or_else(|| problem("The connected iPhone changed. Select it again."))?;
-    Ok((provider, hash_id(&udid.to_ascii_lowercase())))
+    let identifier = tokio::time::timeout(std::time::Duration::from_secs(6), async {
+        let mut phone = LockdownClient::connect(&provider).await
+            .map_err(|_| problem("Reconnect the unlocked iPhone and tap Trust."))?;
+        let kind = phone.get_value(Some("DeviceClass"), None).await
+            .map_err(|_| problem("Unlock the iPhone and tap Trust, then click Refresh."))?;
+        match kind.as_string() {
+            Some("iPhone") => {}
+            Some(_) => return Err(problem("Select an iPhone to continue.")),
+            None => return Err(problem("Unlock the iPhone and tap Trust, then click Refresh.")),
+        }
+        let id = phone.get_value(Some("UniqueDeviceID"), None).await
+            .map_err(|_| problem("Could not read the connected iPhone identifier."))?;
+        let udid = id.as_string().filter(|s| !s.is_empty() && s.eq_ignore_ascii_case(&device.udid))
+            .ok_or_else(|| problem("The connected iPhone changed. Select it again."))?;
+        Ok(hash_id(&udid.to_ascii_lowercase()))
+    }).await.map_err(|_| problem("The iPhone did not respond. Unlock it, tap Trust, and click Refresh."))??;
+    Ok((provider, identifier))
 }
 
 #[derive(Serialize, Deserialize)]

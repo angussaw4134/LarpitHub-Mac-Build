@@ -9,6 +9,7 @@ let step = 0, busy = false, phones = [], selected = null, packageInfo = null;
 let factorId = null, certificateId = null;
 let usesFolderSlots = false;
 let launchSlot = null;
+let lookingForPhone = false;
 const cards = [];
 
 function status(text = "", type = "") {
@@ -51,17 +52,44 @@ async function run(action) {
   finally { busy = false; update(); }
 }
 async function refresh() {
-  phones = []; $("phones").replaceChildren(new Option("Choose an iPhone", ""));
-  phones = await invoke("list_devices");
+  updatePhoneOptions([]);
+  await showPhones(await invoke("list_devices"));
+}
+function updatePhoneOptions(devices) {
+  phones = devices;
+  $("phones").replaceChildren(new Option("Choose an iPhone", ""));
   for (const d of phones) $("phones").add(new Option(d.name + " · " + d.udid.slice(-4), d.udid));
+}
+async function showPhones(devices) {
+  updatePhoneOptions(devices);
   if (phones.length === 1) {
     const phone = phones[0];
     $("phones").value = phone.udid;
     await connectPhone(phone);
   }
-  if (!phones.length) status("No iPhone detected. Connect it by USB, then click Refresh.");
+  if (!phones.length) {
+    status(usesFolderSlots
+      ? "Waiting for an iPhone over USB. Unlock it, tap Trust, and check that it appears in Finder."
+      : "No iPhone detected. Connect it by USB, then click Refresh.");
+  }
+}
+function waitingForPhone() {
+  return step === 0 && !busy && !phones.length;
+}
+async function watchForPhone() {
+  if (lookingForPhone || !waitingForPhone()) return;
+  lookingForPhone = true;
+  try {
+    const devices = await invoke("list_devices");
+    if (devices.length && waitingForPhone()) await run(() => showPhones(devices));
+  } catch {
+    // Manual Refresh shows the error if the Mac's device connection stays unavailable.
+  } finally {
+    lookingForPhone = false;
+  }
 }
 async function connectPhone(phone) {
+  status("Checking the iPhone connection…");
   await invoke("select_phone", {udid: phone.udid});
   await invoke("check_phone");
   selected = phone;
@@ -248,6 +276,7 @@ async function start() {
     createLibrary();
     go(libraryStep);
     await run(readLibrary);
+    setInterval(watchForPhone, 2200);
     return;
   }
   await run(refresh);

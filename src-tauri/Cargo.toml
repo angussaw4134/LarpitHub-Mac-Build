@@ -1,6 +1,6 @@
 [package]
 name = "highzone-loader"
-version = "1.0.4"
+version = "1.0.5"
 description = "AccessHub installer"
 authors = ["AccessHub"]
 edition = "2024"
@@ -31,7 +31,7 @@ futures = "0.3.31"
 once_cell = "1.21.3"
 tauri-plugin-dialog = "2"
 reqwest = "0.13.2"
-tokio = { version = "1.49.0", features = ["fs", "io-util", "sync"] }
+tokio = { version = "1.49.0", features = ["fs", "io-util", "sync", "time"] }
 sha2 = "0.10.9"
 zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
 tempfile = "3"

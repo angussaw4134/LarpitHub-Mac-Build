@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           bundle=src-tauri/target/universal-apple-darwin/release/bundle/macos
-          download=LarpitHub-1.0.4-Mac-Universal
+          download=LarpitHub-1.0.5-Mac-Universal
           stage=$(mktemp -d)
           folder="$stage/Larpit Hub"
           mkdir -p "$folder/ipa1" "$folder/ipa2" "$folder/ipa3"
@@ -75,6 +75,6 @@ jobs:
           shasum -a 256 "$download.zip" > "$download.sha256"
       - uses: actions/upload-artifact@v7
         with:
-          name: LarpitHub-1.0.4-Mac-Universal
-          path: release/LarpitHub-1.0.4-Mac-Universal.*
+          name: LarpitHub-1.0.5-Mac-Universal
+          path: release/LarpitHub-1.0.5-Mac-Universal.*
           if-no-files-found: error
