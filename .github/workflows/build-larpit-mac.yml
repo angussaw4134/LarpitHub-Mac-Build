@@ -2,7 +2,7 @@ name: Build Larpit Hub for Mac
 
 on:
   push:
-    branches: [larpit-mac-build-20261125]
+    branches: [loader-rebuild-20261126]
   workflow_dispatch:
 
 permissions:
@@ -69,8 +69,15 @@ jobs:
           test -z "$(find "$extracted/ipa1" "$extracted/ipa2" "$extracted/ipa3" -mindepth 1 -print -quit)"
           test -z "$(find "$extracted" -iname '*.ipa' -print -quit)"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")
+          test -x "$app/Contents/MacOS/$exe"
           lipo "$app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$app"
+          "$app/Contents/MacOS/$exe" > "$stage/launch.log" 2>&1 &
+          pid=$!
+          sleep 5
+          if ! kill -0 "$pid" 2>/dev/null; then cat "$stage/launch.log"; exit 1; fi
+          kill "$pid"
+          wait "$pid" || true
           cd release
           shasum -a 256 "$download.zip" > "$download.sha256"
       - uses: actions/upload-artifact@v7
